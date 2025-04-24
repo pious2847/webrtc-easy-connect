@@ -27,10 +27,11 @@
     "start:signaling": "cd examples/signaling-server && npm install && npm start",
     "prepublishOnly": "npm run lint && npm test && npm run build",
     "version": "git add -A",
-    "postversion": "git push && git push --tags"
+    "postversion": "git push && git push --tags",
+    "publish:npm": "node publish.js"
   },
   "keywords": ["webrtc", "react", "vue", "angular", "svelte"],
-  "author": "",
+  "author": "Your Name <your.email@example.com>",
   "license": "MIT",
   "devDependencies": {
     "typescript": "^4.9.5",
