@@ -1,0 +1,20 @@
+{
+  "entryPoints": ["src/index.ts"],
+  "out": "docs",
+  "name": "WebRTC Easy",
+  "excludePrivate": true,
+  "excludeProtected": true,
+  "excludeExternals": true,
+  "theme": "default",
+  "categorizeByGroup": false,
+  "categoryOrder": [
+    "Core",
+    "React",
+    "Vue",
+    "Angular",
+    "Svelte",
+    "Utilities",
+    "*"
+  ],
+  "readme": "README.md"
+}
