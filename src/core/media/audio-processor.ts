@@ -1,17 +1,26 @@
+import { MediaProcessor } from './processor';
+
 export interface AudioEffect {
-  type: 'gain' | 'filter' | 'compressor' | 'reverb' | 'noiseSuppression';
-  params: Record<string, number>;
+  type: 'gain' | 'filter' | 'compressor' | 'reverb' | 'noiseSuppression' | 'delay' | 'distortion' | 'equalizer' | 'panner' | 'pitchShift';
+  params: Record<string, number | string>;
 }
 
 export class AudioProcessor extends MediaProcessor {
-  private audioContext: AudioContext;
+  private audioContext!: AudioContext;
   private effects: Map<string, AudioNode> = new Map();
   private inputNode?: MediaStreamAudioSourceNode;
-  private outputNode?: MediaStreamDestinationNode;
+  private outputNode?: MediaStreamAudioDestinationNode;
+  protected options = { enabled: true, processingMode: 'real-time' as const };
+
+  constructor() {
+    super();
+    this.audioContext = new AudioContext();
+  }
 
   async start(): Promise<void> {
-    await this.createProcessingContext();
-    this.audioContext = this.context as AudioContext;
+    if (this.audioContext.state === 'suspended') {
+      await this.audioContext.resume();
+    }
     this.outputNode = this.audioContext.createMediaStreamDestination();
   }
 
@@ -37,19 +46,34 @@ export class AudioProcessor extends MediaProcessor {
 
     switch (effect.type) {
       case 'gain':
-        node = this.createGainEffect(effect.params);
+        node = this.createGainEffect(effect.params as Record<string, number>);
         break;
       case 'filter':
-        node = this.createFilterEffect(effect.params);
+        node = this.createFilterEffect(effect.params as Record<string, number>);
         break;
       case 'compressor':
-        node = this.createCompressorEffect(effect.params);
+        node = this.createCompressorEffect(effect.params as Record<string, number>);
         break;
       case 'reverb':
-        node = await this.createReverbEffect(effect.params);
+        node = await this.createReverbEffect(effect.params as Record<string, number>);
         break;
       case 'noiseSuppression':
-        node = await this.createNoiseSuppressionEffect(effect.params);
+        node = await this.createNoiseSuppressionEffect(effect.params as Record<string, number>);
+        break;
+      case 'delay':
+        node = this.createDelayEffect(effect.params as Record<string, number>);
+        break;
+      case 'distortion':
+        node = this.createDistortionEffect(effect.params as Record<string, number>);
+        break;
+      case 'equalizer':
+        node = this.createEqualizerEffect(effect.params as Record<string, number>);
+        break;
+      case 'panner':
+        node = this.createPannerEffect(effect.params as Record<string, number>);
+        break;
+      case 'pitchShift':
+        node = await this.createPitchShiftEffect(effect.params as Record<string, number>);
         break;
       default:
         throw new Error(`Unsupported effect type: ${effect.type}`);
@@ -57,6 +81,27 @@ export class AudioProcessor extends MediaProcessor {
 
     this.effects.set(id, node);
     await this.reconnectEffectChain();
+  }
+
+  private async reconnectEffectChain(): Promise<void> {
+    if (!this.inputNode || !this.outputNode) return;
+
+    // Disconnect all nodes
+    this.inputNode.disconnect();
+    for (const node of this.effects.values()) {
+      node.disconnect();
+    }
+
+    // Reconnect in order
+    let currentNode: AudioNode = this.inputNode;
+
+    for (const node of this.effects.values()) {
+      currentNode.connect(node);
+      currentNode = node;
+    }
+
+    // Connect to output
+    currentNode.connect(this.outputNode);
   }
 
   private createGainEffect(params: Record<string, number>): GainNode {
@@ -94,6 +139,90 @@ export class AudioProcessor extends MediaProcessor {
     await this.audioContext.audioWorklet.addModule('noise-suppression-processor.js');
     return new AudioWorkletNode(this.audioContext, 'noise-suppression', {
       parameterData: params
+    });
+  }
+
+  private createDelayEffect(params: Record<string, number>): DelayNode {
+    const delay = this.audioContext.createDelay();
+    delay.delayTime.value = params.time ?? 0.5;
+
+    // Create a feedback loop if feedback parameter is provided
+    if (params.feedback && params.feedback > 0) {
+      const feedback = this.audioContext.createGain();
+      feedback.gain.value = Math.min(params.feedback, 0.9); // Limit to avoid infinite feedback
+
+      delay.connect(feedback);
+      feedback.connect(delay);
+    }
+
+    return delay;
+  }
+
+  private createDistortionEffect(params: Record<string, number>): WaveShaperNode {
+    const distortion = this.audioContext.createWaveShaper();
+    const amount = params.amount ?? 50;
+
+    // Create distortion curve
+    const curve = new Float32Array(this.audioContext.sampleRate);
+    const deg = Math.PI / 180;
+
+    for (let i = 0; i < curve.length; i++) {
+      const x = (i * 2) / curve.length - 1;
+      curve[i] = (3 + amount) * x * 20 * deg / (Math.PI + amount * Math.abs(x));
+    }
+
+    distortion.curve = curve;
+    distortion.oversample = 'none';
+
+    return distortion;
+  }
+
+  private createEqualizerEffect(params: Record<string, number>): AudioNode {
+    // Create a container node (GainNode with gain = 1.0)
+    const container = this.audioContext.createGain();
+    container.gain.value = 1.0;
+
+    // Create three-band EQ (low, mid, high)
+    const lowFilter = this.audioContext.createBiquadFilter();
+    lowFilter.type = 'lowshelf';
+    lowFilter.frequency.value = params.lowFrequency ?? 320;
+    lowFilter.gain.value = params.lowGain ?? 0;
+
+    const midFilter = this.audioContext.createBiquadFilter();
+    midFilter.type = 'peaking';
+    midFilter.frequency.value = params.midFrequency ?? 1000;
+    midFilter.Q.value = params.midQ ?? 1;
+    midFilter.gain.value = params.midGain ?? 0;
+
+    const highFilter = this.audioContext.createBiquadFilter();
+    highFilter.type = 'highshelf';
+    highFilter.frequency.value = params.highFrequency ?? 3200;
+    highFilter.gain.value = params.highGain ?? 0;
+
+    // Connect the filters in series
+    container.connect(lowFilter);
+    lowFilter.connect(midFilter);
+    midFilter.connect(highFilter);
+
+    // The last filter is the output of our equalizer
+    return highFilter;
+  }
+
+  private createPannerEffect(params: Record<string, number>): StereoPannerNode {
+    const panner = this.audioContext.createStereoPanner();
+    panner.pan.value = Math.max(-1, Math.min(1, params.pan ?? 0));
+    return panner;
+  }
+
+  private async createPitchShiftEffect(params: Record<string, number>): Promise<AudioWorkletNode> {
+    // This is a simplified implementation that requires a pitch-shift-processor.js worklet
+    await this.audioContext.audioWorklet.addModule('pitch-shift-processor.js');
+
+    return new AudioWorkletNode(this.audioContext, 'pitch-shift', {
+      parameterData: {
+        pitch: params.pitch ?? 1.0,
+        grainSize: params.grainSize ?? 0.1
+      }
     });
   }
 

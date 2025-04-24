@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebRTC File Sharing Example</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .container {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .connection-info {
+      padding: 10px;
+      background-color: #f8f8f8;
+      border-radius: 4px;
+    }
+    .file-transfer {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .controls {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    button {
+      padding: 8px 16px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    button:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
+    }
+    input {
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+    .progress-container {
+      width: 100%;
+      height: 20px;
+      background-color: #f0f0f0;
+      border-radius: 4px;
+      margin-top: 10px;
+    }
+    .progress-bar {
+      height: 100%;
+      background-color: #4CAF50;
+      border-radius: 4px;
+      width: 0%;
+      transition: width 0.3s;
+    }
+    .file-list {
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 10px;
+      min-height: 100px;
+    }
+    .file-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px;
+      border-bottom: 1px solid #eee;
+    }
+    .file-item:last-child {
+      border-bottom: none;
+    }
+    .log {
+      height: 200px;
+      overflow-y: auto;
+      background-color: #f8f8f8;
+      padding: 10px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>WebRTC File Sharing Example</h1>
+    
+    <div class="connection-info" id="connectionInfo">
+      Status: Disconnected
+    </div>
+    
+    <div class="controls">
+      <input type="text" id="roomId" placeholder="Room ID" value="file-sharing-room">
+      <button id="createBtn">Create Room</button>
+      <button id="joinBtn">Join Room</button>
+      <button id="disconnectBtn" disabled>Disconnect</button>
+    </div>
+    
+    <div class="file-transfer">
+      <h2>Send File</h2>
+      <input type="file" id="fileInput">
+      <button id="sendFileBtn" disabled>Send File</button>
+      <div class="progress-container">
+        <div class="progress-bar" id="sendProgress"></div>
+      </div>
+    </div>
+    
+    <div class="file-transfer">
+      <h2>Received Files</h2>
+      <div class="file-list" id="receivedFiles">
+        <p>No files received yet.</p>
+      </div>
+      <div class="progress-container">
+        <div class="progress-bar" id="receiveProgress"></div>
+      </div>
+    </div>
+    
+    <h3>Connection Log</h3>
+    <div class="log" id="log"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/webrtc-easy@latest/dist/webrtc-easy.min.js"></script>
+  <script>
+    // DOM elements
+    const connectionInfoEl = document.getElementById('connectionInfo');
+    const roomIdInput = document.getElementById('roomId');
+    const createBtn = document.getElementById('createBtn');
+    const joinBtn = document.getElementById('joinBtn');
+    const disconnectBtn = document.getElementById('disconnectBtn');
+    const fileInput = document.getElementById('fileInput');
+    const sendFileBtn = document.getElementById('sendFileBtn');
+    const sendProgressEl = document.getElementById('sendProgress');
+    const receivedFilesEl = document.getElementById('receivedFiles');
+    const receiveProgressEl = document.getElementById('receiveProgress');
+    const logEl = document.getElementById('log');
+
+    // WebRTC variables
+    let connection;
+    let signaling;
+    let isInitiator = false;
+    let connectedPeerId = null;
+    let receivedFileChunks = [];
+    let receivedFileName = '';
+    let receivedFileType = '';
+    let receivedFileSize = 0;
+    let receivedSize = 0;
+    
+    // File transfer constants
+    const CHUNK_SIZE = 16384; // 16KB chunks
+
+    // Create a room (as initiator)
+    async function createRoom() {
+      const roomId = roomIdInput.value.trim();
+      if (!roomId) {
+        alert('Please enter a room ID');
+        return;
+      }
+      
+      isInitiator = true;
+      await setupConnection(roomId);
+      
+      log(`Created room: ${roomId}`);
+      connectionInfoEl.textContent = `Status: Created room ${roomId}, waiting for peer...`;
+      
+      updateButtons(true);
+    }
+
+    // Join a room (as peer)
+    async function joinRoom() {
+      const roomId = roomIdInput.value.trim();
+      if (!roomId) {
+        alert('Please enter a room ID');
+        return;
+      }
+      
+      isInitiator = false;
+      await setupConnection(roomId);
+      
+      log(`Joined room: ${roomId}`);
+      connectionInfoEl.textContent = `Status: Joined room ${roomId}, connecting...`;
+      
+      updateButtons(true);
+    }
+
+    // Set up WebRTC connection
+    async function setupConnection(roomId) {
+      try {
+        // Create signaling connection
+        signaling = new WebRTCEasy.WebSocketSignaling({
+          url: 'wss://your-signaling-server.com', // Replace with your signaling server
+          room: roomId
+        });
+        
+        // Create WebRTC connection
+        connection = new WebRTCEasy.RTCConnection({
+          configuration: {
+            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+          },
+          onConnectionStateChange: handleConnectionStateChange,
+          onError: handleError
+        });
+        
+        // Create data channel for file transfer
+        const fileChannel = connection.createDataChannel('file-transfer');
+        
+        // Set up signaling
+        signaling.onMessage(async (message) => {
+          switch (message.type) {
+            case 'offer':
+              const answer = await connection.createAnswer(message.payload);
+              signaling.send({ type: 'answer', payload: answer });
+              connectedPeerId = message.sender;
+              break;
+              
+            case 'answer':
+              await connection.handleAnswer(message.payload);
+              connectedPeerId = message.sender;
+              break;
+              
+            case 'ice-candidate':
+              await connection.addIceCandidate(message.payload);
+              break;
+              
+            case 'peer-joined':
+              log(`Peer joined: ${message.payload.peerId}`);
+              if (isInitiator) {
+                const offer = await connection.createOffer();
+                signaling.send({ type: 'offer', payload: offer });
+              }
+              break;
+              
+            case 'peer-left':
+              log(`Peer left: ${message.payload.peerId}`);
+              handleDisconnect();
+              break;
+          }
+        });
+        
+        // Set up file transfer data channel
+        connection.onDataChannelMessage('file-transfer', handleFileMessage);
+        
+      } catch (error) {
+        log(`Error setting up connection: ${error.message}`);
+      }
+    }
+
+    // Handle connection state changes
+    function handleConnectionStateChange(state) {
+      log(`Connection state: ${state}`);
+      
+      if (state === 'connected') {
+        connectionInfoEl.textContent = `Status: Connected to peer`;
+        sendFileBtn.disabled = false;
+      } else if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+        handleDisconnect();
+      }
+    }
+
+    // Handle errors
+    function handleError(error) {
+      log(`Error: ${error.message}`);
+    }
+
+    // Handle disconnection
+    function handleDisconnect() {
+      connectionInfoEl.textContent = 'Status: Disconnected';
+      updateButtons(false);
+      connectedPeerId = null;
+      resetFileTransfer();
+    }
+
+    // Disconnect from the room
+    function disconnect() {
+      if (connection) {
+        connection.close();
+      }
+      
+      if (signaling) {
+        signaling.disconnect();
+      }
+      
+      handleDisconnect();
+      log('Disconnected');
+    }
+
+    // Send a file
+    async function sendFile() {
+      const file = fileInput.files[0];
+      if (!file) {
+        alert('Please select a file to send');
+        return;
+      }
+      
+      log(`Sending file: ${file.name} (${formatBytes(file.size)})`);
+      
+      // Send file metadata first
+      const metadata = {
+        type: 'metadata',
+        name: file.name,
+        size: file.size,
+        fileType: file.type
+      };
+      
+      connection.sendData('file-transfer', JSON.stringify(metadata));
+      
+      // Read and send the file in chunks
+      const reader = new FileReader();
+      let offset = 0;
+      
+      reader.onload = (event) => {
+        if (connection.getConnectionState() !== 'connected') {
+          log('Connection lost, file transfer aborted');
+          return;
+        }
+        
+        const chunk = event.target.result;
+        connection.sendData('file-transfer', chunk);
+        
+        offset += chunk.byteLength;
+        const progress = Math.min((offset / file.size) * 100, 100);
+        sendProgressEl.style.width = `${progress}%`;
+        
+        if (offset < file.size) {
+          // Read the next chunk
+          readNextChunk();
+        } else {
+          // File transfer complete
+          log('File sent successfully');
+          setTimeout(() => {
+            sendProgressEl.style.width = '0%';
+          }, 2000);
+        }
+      };
+      
+      function readNextChunk() {
+        const slice = file.slice(offset, offset + CHUNK_SIZE);
+        reader.readAsArrayBuffer(slice);
+      }
+      
+      // Start reading the first chunk
+      readNextChunk();
+    }
+
+    // Handle incoming file data
+    function handleFileMessage(data) {
+      // Check if the message is metadata (JSON string) or file chunk (ArrayBuffer)
+      if (typeof data === 'string') {
+        try {
+          const metadata = JSON.parse(data);
+          if (metadata.type === 'metadata') {
+            // Start receiving a new file
+            receivedFileName = metadata.name;
+            receivedFileType = metadata.fileType;
+            receivedFileSize = metadata.size;
+            receivedSize = 0;
+            receivedFileChunks = [];
+            
+            log(`Receiving file: ${receivedFileName} (${formatBytes(receivedFileSize)})`);
+          }
+        } catch (error) {
+          log(`Error parsing metadata: ${error.message}`);
+        }
+      } else if (data instanceof ArrayBuffer) {
+        // Received a file chunk
+        receivedFileChunks.push(data);
+        receivedSize += data.byteLength;
+        
+        // Update progress
+        const progress = Math.min((receivedSize / receivedFileSize) * 100, 100);
+        receiveProgressEl.style.width = `${progress}%`;
+        
+        // Check if file transfer is complete
+        if (receivedSize >= receivedFileSize) {
+          // Combine all chunks into a single blob
+          const fileBlob = new Blob(receivedFileChunks, { type: receivedFileType });
+          saveReceivedFile(fileBlob);
+          
+          // Reset for next file
+          receivedFileChunks = [];
+          
+          log('File received successfully');
+          setTimeout(() => {
+            receiveProgressEl.style.width = '0%';
+          }, 2000);
+        }
+      }
+    }
+
+    // Save the received file
+    function saveReceivedFile(blob) {
+      const url = URL.createObjectURL(blob);
+      
+      // Add file to the received files list
+      if (receivedFilesEl.querySelector('p')) {
+        receivedFilesEl.innerHTML = '';
+      }
+      
+      const fileItem = document.createElement('div');
+      fileItem.className = 'file-item';
+      fileItem.innerHTML = `
+        <span>${receivedFileName} (${formatBytes(receivedFileSize)})</span>
+        <a href="${url}" download="${receivedFileName}" target="_blank">Download</a>
+      `;
+      
+      receivedFilesEl.appendChild(fileItem);
+    }
+
+    // Reset file transfer state
+    function resetFileTransfer() {
+      receivedFileChunks = [];
+      receivedFileName = '';
+      receivedFileType = '';
+      receivedFileSize = 0;
+      receivedSize = 0;
+      sendProgressEl.style.width = '0%';
+      receiveProgressEl.style.width = '0%';
+    }
+
+    // Update button states
+    function updateButtons(connected) {
+      createBtn.disabled = connected;
+      joinBtn.disabled = connected;
+      disconnectBtn.disabled = !connected;
+      sendFileBtn.disabled = !connected;
+    }
+
+    // Format bytes to human-readable size
+    function formatBytes(bytes, decimals = 2) {
+      if (bytes === 0) return '0 Bytes';
+      
+      const k = 1024;
+      const dm = decimals < 0 ? 0 : decimals;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+      
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+    }
+
+    // Log a message
+    function log(message) {
+      const time = new Date().toLocaleTimeString();
+      const logMessage = `${time} - ${message}`;
+      logEl.innerHTML += logMessage + '<br>';
+      logEl.scrollTop = logEl.scrollHeight;
+      console.log(message);
+    }
+
+    // Event listeners
+    createBtn.addEventListener('click', createRoom);
+    joinBtn.addEventListener('click', joinRoom);
+    disconnectBtn.addEventListener('click', disconnect);
+    sendFileBtn.addEventListener('click', sendFile);
+
+    // Initialize
+    log('WebRTC File Sharing Example');
+    log('Create or join a room to start sharing files');
+  </script>
+</body>
+</html>

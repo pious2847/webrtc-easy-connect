@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebRTC Signaling Example</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .container {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .videos {
+      display: flex;
+      gap: 20px;
+    }
+    video {
+      width: 100%;
+      max-width: 400px;
+      background-color: #222;
+      border-radius: 8px;
+    }
+    .controls {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    button {
+      padding: 8px 16px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    button:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
+    }
+    input {
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+    .status {
+      padding: 10px;
+      background-color: #f8f8f8;
+      border-radius: 4px;
+      margin-bottom: 20px;
+    }
+    .log {
+      height: 200px;
+      overflow-y: auto;
+      background-color: #f8f8f8;
+      padding: 10px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>WebRTC Signaling Example</h1>
+    
+    <div class="status" id="status">
+      Status: Disconnected
+    </div>
+    
+    <div class="controls">
+      <input type="text" id="roomId" placeholder="Room ID" value="test-room">
+      <button id="joinBtn">Join Room</button>
+      <button id="leaveBtn" disabled>Leave Room</button>
+    </div>
+    
+    <div class="videos">
+      <div>
+        <h3>Local Video</h3>
+        <video id="localVideo" autoplay muted playsinline></video>
+      </div>
+      <div>
+        <h3>Remote Video</h3>
+        <video id="remoteVideo" autoplay playsinline></video>
+      </div>
+    </div>
+    
+    <div class="controls">
+      <button id="startBtn">Start Call</button>
+      <button id="hangupBtn" disabled>Hang Up</button>
+      <button id="screenShareBtn" disabled>Share Screen</button>
+    </div>
+    
+    <h3>Connection Log</h3>
+    <div class="log" id="log"></div>
+  </div>
+
+  <script>
+    // DOM elements
+    const statusEl = document.getElementById('status');
+    const roomIdInput = document.getElementById('roomId');
+    const joinBtn = document.getElementById('joinBtn');
+    const leaveBtn = document.getElementById('leaveBtn');
+    const startBtn = document.getElementById('startBtn');
+    const hangupBtn = document.getElementById('hangupBtn');
+    const screenShareBtn = document.getElementById('screenShareBtn');
+    const localVideo = document.getElementById('localVideo');
+    const remoteVideo = document.getElementById('remoteVideo');
+    const logEl = document.getElementById('log');
+
+    // WebRTC variables
+    let localStream;
+    let peerConnection;
+    let roomId;
+    let clientId;
+    let ws;
+
+    // Configuration
+    const iceServers = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ]
+    };
+
+    // Connect to signaling server
+    function connectSignaling() {
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${location.host}`;
+      
+      ws = new WebSocket(wsUrl);
+      
+      ws.onopen = () => {
+        log('Connected to signaling server');
+        statusEl.textContent = 'Status: Connected to signaling server';
+      };
+      
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        handleSignalingMessage(data);
+      };
+      
+      ws.onclose = () => {
+        log('Disconnected from signaling server');
+        statusEl.textContent = 'Status: Disconnected';
+      };
+      
+      ws.onerror = (error) => {
+        log('WebSocket error: ' + error);
+        statusEl.textContent = 'Status: Connection error';
+      };
+    }
+
+    // Handle signaling messages
+    function handleSignalingMessage(data) {
+      log('Received: ' + data.type);
+      
+      switch (data.type) {
+        case 'connection':
+          clientId = data.payload.id;
+          log('Assigned client ID: ' + clientId);
+          break;
+          
+        case 'room-joined':
+          roomId = data.payload.room;
+          statusEl.textContent = `Status: Joined room ${roomId}`;
+          joinBtn.disabled = true;
+          leaveBtn.disabled = false;
+          startBtn.disabled = false;
+          log(`Joined room: ${roomId}`);
+          break;
+          
+        case 'peer-joined':
+          log(`Peer joined: ${data.payload.peerId}`);
+          break;
+          
+        case 'peer-left':
+          log(`Peer left: ${data.payload.peerId}`);
+          closeVideoCall();
+          break;
+          
+        case 'offer':
+          handleOffer(data);
+          break;
+          
+        case 'answer':
+          handleAnswer(data);
+          break;
+          
+        case 'ice-candidate':
+          handleIceCandidate(data);
+          break;
+      }
+    }
+
+    // Join a room
+    async function joinRoom() {
+      const room = roomIdInput.value.trim();
+      if (!room) {
+        alert('Please enter a room ID');
+        return;
+      }
+      
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'join',
+          room: room
+        }));
+      } else {
+        alert('Not connected to signaling server');
+      }
+    }
+
+    // Leave the current room
+    function leaveRoom() {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'leave'
+        }));
+        
+        closeVideoCall();
+        
+        joinBtn.disabled = false;
+        leaveBtn.disabled = true;
+        startBtn.disabled = true;
+        hangupBtn.disabled = true;
+        screenShareBtn.disabled = true;
+        
+        statusEl.textContent = 'Status: Connected to signaling server';
+      }
+    }
+
+    // Start a video call
+    async function startCall() {
+      try {
+        // Get local media stream
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        localVideo.srcObject = localStream;
+        
+        // Create peer connection
+        createPeerConnection();
+        
+        // Add tracks to the peer connection
+        localStream.getTracks().forEach(track => {
+          peerConnection.addTrack(track, localStream);
+        });
+        
+        // Create and send offer
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+        
+        ws.send(JSON.stringify({
+          type: 'offer',
+          payload: offer
+        }));
+        
+        startBtn.disabled = true;
+        hangupBtn.disabled = false;
+        screenShareBtn.disabled = false;
+        
+        log('Created and sent offer');
+      } catch (error) {
+        log('Error starting call: ' + error);
+      }
+    }
+
+    // Handle an incoming offer
+    async function handleOffer(data) {
+      log('Received offer');
+      
+      if (!localStream) {
+        try {
+          localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+          localVideo.srcObject = localStream;
+        } catch (error) {
+          log('Error accessing media devices: ' + error);
+          return;
+        }
+      }
+      
+      createPeerConnection();
+      
+      // Add tracks to the peer connection
+      localStream.getTracks().forEach(track => {
+        peerConnection.addTrack(track, localStream);
+      });
+      
+      // Set remote description (the offer)
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(data.payload));
+      
+      // Create and send answer
+      const answer = await peerConnection.createAnswer();
+      await peerConnection.setLocalDescription(answer);
+      
+      ws.send(JSON.stringify({
+        type: 'answer',
+        payload: answer,
+        target: data.sender
+      }));
+      
+      startBtn.disabled = true;
+      hangupBtn.disabled = false;
+      screenShareBtn.disabled = false;
+      
+      log('Created and sent answer');
+    }
+
+    // Handle an incoming answer
+    async function handleAnswer(data) {
+      log('Received answer');
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(data.payload));
+    }
+
+    // Handle an incoming ICE candidate
+    async function handleIceCandidate(data) {
+      if (data.payload) {
+        try {
+          await peerConnection.addIceCandidate(new RTCIceCandidate(data.payload));
+          log('Added ICE candidate');
+        } catch (error) {
+          log('Error adding ICE candidate: ' + error);
+        }
+      }
+    }
+
+    // Create a peer connection
+    function createPeerConnection() {
+      if (peerConnection) {
+        closeVideoCall();
+      }
+      
+      peerConnection = new RTCPeerConnection(iceServers);
+      
+      // Handle ICE candidates
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          ws.send(JSON.stringify({
+            type: 'ice-candidate',
+            payload: event.candidate
+          }));
+        }
+      };
+      
+      // Handle connection state changes
+      peerConnection.onconnectionstatechange = (event) => {
+        log('Connection state: ' + peerConnection.connectionState);
+      };
+      
+      // Handle tracks
+      peerConnection.ontrack = (event) => {
+        log('Received remote track');
+        remoteVideo.srcObject = event.streams[0];
+      };
+    }
+
+    // Close the video call
+    function closeVideoCall() {
+      if (peerConnection) {
+        peerConnection.ontrack = null;
+        peerConnection.onicecandidate = null;
+        peerConnection.onconnectionstatechange = null;
+        
+        // Close the peer connection
+        peerConnection.close();
+        peerConnection = null;
+        
+        log('Closed peer connection');
+      }
+      
+      // Stop all tracks in the local stream
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+        localStream = null;
+      }
+      
+      // Clear video elements
+      localVideo.srcObject = null;
+      remoteVideo.srcObject = null;
+      
+      // Reset buttons
+      startBtn.disabled = false;
+      hangupBtn.disabled = true;
+      screenShareBtn.disabled = true;
+    }
+
+    // Share screen
+    async function shareScreen() {
+      try {
+        const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+        
+        // Replace video track
+        const videoTrack = screenStream.getVideoTracks()[0];
+        const sender = peerConnection.getSenders().find(s => s.track.kind === 'video');
+        
+        if (sender) {
+          sender.replaceTrack(videoTrack);
+          
+          // Stop screen sharing when the track ends
+          videoTrack.onended = () => {
+            if (localStream) {
+              const localVideoTrack = localStream.getVideoTracks()[0];
+              if (localVideoTrack) {
+                sender.replaceTrack(localVideoTrack);
+                log('Stopped screen sharing');
+              }
+            }
+          };
+          
+          log('Started screen sharing');
+        }
+      } catch (error) {
+        log('Error sharing screen: ' + error);
+      }
+    }
+
+    // Log a message
+    function log(message) {
+      const time = new Date().toLocaleTimeString();
+      const logMessage = `${time} - ${message}`;
+      logEl.innerHTML += logMessage + '<br>';
+      logEl.scrollTop = logEl.scrollHeight;
+      console.log(message);
+    }
+
+    // Event listeners
+    joinBtn.addEventListener('click', joinRoom);
+    leaveBtn.addEventListener('click', leaveRoom);
+    startBtn.addEventListener('click', startCall);
+    hangupBtn.addEventListener('click', closeVideoCall);
+    screenShareBtn.addEventListener('click', shareScreen);
+
+    // Connect to signaling server on page load
+    window.addEventListener('load', connectSignaling);
+  </script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 import { MediaProcessor } from './processor';
 
 export interface VideoFilter {
-  type: 'blur' | 'colorize' | 'brightness' | 'contrast' | 'custom';
+  type: 'blur' | 'colorize' | 'brightness' | 'contrast' | 'sepia' | 'grayscale' | 'invert' | 'pixelate' | 'custom';
   params: Record<string, number | string>;
   shader?: string;
 }
@@ -94,6 +94,24 @@ export class VideoProcessor extends MediaProcessor {
       case 'colorize':
         fragmentShader = this.getColorizeShader();
         break;
+      case 'brightness':
+        fragmentShader = this.getBrightnessShader();
+        break;
+      case 'contrast':
+        fragmentShader = this.getContrastShader();
+        break;
+      case 'sepia':
+        fragmentShader = this.getSepiaShader();
+        break;
+      case 'grayscale':
+        fragmentShader = this.getGrayscaleShader();
+        break;
+      case 'invert':
+        fragmentShader = this.getInvertShader();
+        break;
+      case 'pixelate':
+        fragmentShader = this.getPixelateShader();
+        break;
       case 'custom':
         fragmentShader = filter.shader!;
         break;
@@ -145,6 +163,103 @@ export class VideoProcessor extends MediaProcessor {
         vec3 gray = vec3(dot(texColor.rgb, vec3(0.299, 0.587, 0.114)));
         vec3 colorized = mix(gray, u_color, u_intensity);
         fragColor = vec4(colorized, texColor.a);
+      }
+    `;
+  }
+
+  private getBrightnessShader(): string {
+    return `#version 300 es
+      precision mediump float;
+      uniform sampler2D u_image;
+      uniform float u_brightness;
+      in vec2 v_texCoord;
+      out vec4 fragColor;
+
+      void main() {
+        vec4 texColor = texture(u_image, v_texCoord);
+        fragColor = vec4(texColor.rgb * u_brightness, texColor.a);
+      }
+    `;
+  }
+
+  private getContrastShader(): string {
+    return `#version 300 es
+      precision mediump float;
+      uniform sampler2D u_image;
+      uniform float u_contrast;
+      in vec2 v_texCoord;
+      out vec4 fragColor;
+
+      void main() {
+        vec4 texColor = texture(u_image, v_texCoord);
+        vec3 contrasted = (texColor.rgb - 0.5) * u_contrast + 0.5;
+        fragColor = vec4(contrasted, texColor.a);
+      }
+    `;
+  }
+
+  private getSepiaShader(): string {
+    return `#version 300 es
+      precision mediump float;
+      uniform sampler2D u_image;
+      uniform float u_intensity;
+      in vec2 v_texCoord;
+      out vec4 fragColor;
+
+      void main() {
+        vec4 texColor = texture(u_image, v_texCoord);
+        vec3 sepia = vec3(
+          dot(texColor.rgb, vec3(0.393, 0.769, 0.189)),
+          dot(texColor.rgb, vec3(0.349, 0.686, 0.168)),
+          dot(texColor.rgb, vec3(0.272, 0.534, 0.131))
+        );
+        vec3 result = mix(texColor.rgb, sepia, u_intensity);
+        fragColor = vec4(result, texColor.a);
+      }
+    `;
+  }
+
+  private getGrayscaleShader(): string {
+    return `#version 300 es
+      precision mediump float;
+      uniform sampler2D u_image;
+      in vec2 v_texCoord;
+      out vec4 fragColor;
+
+      void main() {
+        vec4 texColor = texture(u_image, v_texCoord);
+        float gray = dot(texColor.rgb, vec3(0.299, 0.587, 0.114));
+        fragColor = vec4(vec3(gray), texColor.a);
+      }
+    `;
+  }
+
+  private getInvertShader(): string {
+    return `#version 300 es
+      precision mediump float;
+      uniform sampler2D u_image;
+      in vec2 v_texCoord;
+      out vec4 fragColor;
+
+      void main() {
+        vec4 texColor = texture(u_image, v_texCoord);
+        fragColor = vec4(1.0 - texColor.rgb, texColor.a);
+      }
+    `;
+  }
+
+  private getPixelateShader(): string {
+    return `#version 300 es
+      precision mediump float;
+      uniform sampler2D u_image;
+      uniform vec2 u_textureSize;
+      uniform float u_pixelSize;
+      in vec2 v_texCoord;
+      out vec4 fragColor;
+
+      void main() {
+        vec2 pixelCoord = floor(v_texCoord * u_textureSize / u_pixelSize) * u_pixelSize / u_textureSize;
+        fragColor = texture(u_image, pixelCoord);
       }
     `;
   }
@@ -271,6 +386,36 @@ export class VideoProcessor extends MediaProcessor {
           filter.params.intensity as number || 0.5
         );
         break;
+      case 'brightness':
+        this.gl.uniform1f(
+          this.gl.getUniformLocation(program, 'u_brightness'),
+          filter.params.value as number || 1.0
+        );
+        break;
+      case 'contrast':
+        this.gl.uniform1f(
+          this.gl.getUniformLocation(program, 'u_contrast'),
+          filter.params.value as number || 1.0
+        );
+        break;
+      case 'sepia':
+        this.gl.uniform1f(
+          this.gl.getUniformLocation(program, 'u_intensity'),
+          filter.params.intensity as number || 1.0
+        );
+        break;
+      case 'pixelate':
+        this.gl.uniform2f(
+          this.gl.getUniformLocation(program, 'u_textureSize'),
+          this.canvas.width,
+          this.canvas.height
+        );
+        this.gl.uniform1f(
+          this.gl.getUniformLocation(program, 'u_pixelSize'),
+          filter.params.size as number || 10.0
+        );
+        break;
+      // grayscale and invert don't need any uniforms
     }
 
     // Bind input texture

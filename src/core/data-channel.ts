@@ -12,6 +12,7 @@ export interface DataChannelOptions {
 export class DataChannelManager {
   private channels = new Map<string, RTCDataChannel>();
   private messageHandlers = new Map<string, Set<(data: any) => void>>();
+  private events = new EventEmitter();
 
   constructor(private peerConnection: RTCPeerConnection) {
     peerConnection.ondatachannel = this.handleDataChannel.bind(this);
@@ -37,16 +38,29 @@ export class DataChannelManager {
   private setupChannel(channel: RTCDataChannel) {
     channel.onopen = () => this.events.emit(`${channel.label}:open`);
     channel.onclose = () => this.events.emit(`${channel.label}:close`);
-    channel.onmessage = (event) => this.events.emit(`${channel.label}:message`, event.data);
+    channel.onmessage = (event) => {
+      this.events.emit(`${channel.label}:message`, event.data);
+
+      // Also notify any registered message handlers
+      const handlers = this.messageHandlers.get(channel.label);
+      if (handlers) {
+        handlers.forEach(handler => handler(event.data));
+      }
+    };
     channel.onerror = (event) => this.events.emit(`${channel.label}:error`, event);
   }
 
-  send(label: string, data: string | Blob | ArrayBuffer): boolean {
+  send(label: string, data: string | Blob | ArrayBuffer | ArrayBufferView): boolean {
     const channel = this.channels.get(label);
     if (!channel || channel.readyState !== 'open') return false;
-    
-    channel.send(data);
-    return true;
+
+    try {
+      channel.send(data as any);
+      return true;
+    } catch (error) {
+      console.error(`Error sending data on channel ${label}:`, error);
+      return false;
+    }
   }
 
   closeChannel(label: string): void {
