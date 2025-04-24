@@ -95,18 +95,18 @@
 <body>
   <div class="container">
     <h1>WebRTC File Sharing Example</h1>
-    
+
     <div class="connection-info" id="connectionInfo">
       Status: Disconnected
     </div>
-    
+
     <div class="controls">
       <input type="text" id="roomId" placeholder="Room ID" value="file-sharing-room">
       <button id="createBtn">Create Room</button>
       <button id="joinBtn">Join Room</button>
       <button id="disconnectBtn" disabled>Disconnect</button>
     </div>
-    
+
     <div class="file-transfer">
       <h2>Send File</h2>
       <input type="file" id="fileInput">
@@ -115,7 +115,7 @@
         <div class="progress-bar" id="sendProgress"></div>
       </div>
     </div>
-    
+
     <div class="file-transfer">
       <h2>Received Files</h2>
       <div class="file-list" id="receivedFiles">
@@ -125,12 +125,40 @@
         <div class="progress-bar" id="receiveProgress"></div>
       </div>
     </div>
-    
+
     <h3>Connection Log</h3>
     <div class="log" id="log"></div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/webrtc-easy@latest/dist/webrtc-easy.min.js"></script>
+  <!-- Use local version of the library if available, fallback to CDN -->
+  <script>
+    // Try to load the local version first
+    function loadScript(src, fallbackSrc) {
+      return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = resolve;
+        script.onerror = () => {
+          console.warn(`Failed to load script from ${src}, trying fallback...`);
+          const fallbackScript = document.createElement('script');
+          fallbackScript.src = fallbackSrc;
+          fallbackScript.onload = resolve;
+          fallbackScript.onerror = reject;
+          document.head.appendChild(fallbackScript);
+        };
+        document.head.appendChild(script);
+      });
+    }
+
+    // Load the library
+    loadScript(
+      '../../dist/webrtc-easy.min.js',
+      'https://cdn.jsdelivr.net/npm/webrtc-easy@latest/dist/webrtc-easy.min.js'
+    ).catch(err => {
+      console.error('Failed to load WebRTC Easy library:', err);
+      alert('Failed to load WebRTC Easy library. Please check the console for details.');
+    });
+  </script>
   <script>
     // DOM elements
     const connectionInfoEl = document.getElementById('connectionInfo');
@@ -155,7 +183,7 @@
     let receivedFileType = '';
     let receivedFileSize = 0;
     let receivedSize = 0;
-    
+
     // File transfer constants
     const CHUNK_SIZE = 16384; // 16KB chunks
 
@@ -166,13 +194,13 @@
         alert('Please enter a room ID');
         return;
       }
-      
+
       isInitiator = true;
       await setupConnection(roomId);
-      
+
       log(`Created room: ${roomId}`);
       connectionInfoEl.textContent = `Status: Created room ${roomId}, waiting for peer...`;
-      
+
       updateButtons(true);
     }
 
@@ -183,13 +211,13 @@
         alert('Please enter a room ID');
         return;
       }
-      
+
       isInitiator = false;
       await setupConnection(roomId);
-      
+
       log(`Joined room: ${roomId}`);
       connectionInfoEl.textContent = `Status: Joined room ${roomId}, connecting...`;
-      
+
       updateButtons(true);
     }
 
@@ -198,10 +226,10 @@
       try {
         // Create signaling connection
         signaling = new WebRTCEasy.WebSocketSignaling({
-          url: 'wss://your-signaling-server.com', // Replace with your signaling server
+          url: 'ws://localhost:3000', // Local signaling server from examples/signaling-server
           room: roomId
         });
-        
+
         // Create WebRTC connection
         connection = new WebRTCEasy.RTCConnection({
           configuration: {
@@ -210,10 +238,10 @@
           onConnectionStateChange: handleConnectionStateChange,
           onError: handleError
         });
-        
+
         // Create data channel for file transfer
         const fileChannel = connection.createDataChannel('file-transfer');
-        
+
         // Set up signaling
         signaling.onMessage(async (message) => {
           switch (message.type) {
@@ -222,16 +250,16 @@
               signaling.send({ type: 'answer', payload: answer });
               connectedPeerId = message.sender;
               break;
-              
+
             case 'answer':
               await connection.handleAnswer(message.payload);
               connectedPeerId = message.sender;
               break;
-              
+
             case 'ice-candidate':
               await connection.addIceCandidate(message.payload);
               break;
-              
+
             case 'peer-joined':
               log(`Peer joined: ${message.payload.peerId}`);
               if (isInitiator) {
@@ -239,17 +267,17 @@
                 signaling.send({ type: 'offer', payload: offer });
               }
               break;
-              
+
             case 'peer-left':
               log(`Peer left: ${message.payload.peerId}`);
               handleDisconnect();
               break;
           }
         });
-        
+
         // Set up file transfer data channel
         connection.onDataChannelMessage('file-transfer', handleFileMessage);
-        
+
       } catch (error) {
         log(`Error setting up connection: ${error.message}`);
       }
@@ -258,7 +286,7 @@
     // Handle connection state changes
     function handleConnectionStateChange(state) {
       log(`Connection state: ${state}`);
-      
+
       if (state === 'connected') {
         connectionInfoEl.textContent = `Status: Connected to peer`;
         sendFileBtn.disabled = false;
@@ -285,11 +313,11 @@
       if (connection) {
         connection.close();
       }
-      
+
       if (signaling) {
         signaling.disconnect();
       }
-      
+
       handleDisconnect();
       log('Disconnected');
     }
@@ -301,9 +329,9 @@
         alert('Please select a file to send');
         return;
       }
-      
+
       log(`Sending file: ${file.name} (${formatBytes(file.size)})`);
-      
+
       // Send file metadata first
       const metadata = {
         type: 'metadata',
@@ -311,26 +339,26 @@
         size: file.size,
         fileType: file.type
       };
-      
+
       connection.sendData('file-transfer', JSON.stringify(metadata));
-      
+
       // Read and send the file in chunks
       const reader = new FileReader();
       let offset = 0;
-      
+
       reader.onload = (event) => {
         if (connection.getConnectionState() !== 'connected') {
           log('Connection lost, file transfer aborted');
           return;
         }
-        
+
         const chunk = event.target.result;
         connection.sendData('file-transfer', chunk);
-        
+
         offset += chunk.byteLength;
         const progress = Math.min((offset / file.size) * 100, 100);
         sendProgressEl.style.width = `${progress}%`;
-        
+
         if (offset < file.size) {
           // Read the next chunk
           readNextChunk();
@@ -342,12 +370,12 @@
           }, 2000);
         }
       };
-      
+
       function readNextChunk() {
         const slice = file.slice(offset, offset + CHUNK_SIZE);
         reader.readAsArrayBuffer(slice);
       }
-      
+
       // Start reading the first chunk
       readNextChunk();
     }
@@ -365,7 +393,7 @@
             receivedFileSize = metadata.size;
             receivedSize = 0;
             receivedFileChunks = [];
-            
+
             log(`Receiving file: ${receivedFileName} (${formatBytes(receivedFileSize)})`);
           }
         } catch (error) {
@@ -375,20 +403,20 @@
         // Received a file chunk
         receivedFileChunks.push(data);
         receivedSize += data.byteLength;
-        
+
         // Update progress
         const progress = Math.min((receivedSize / receivedFileSize) * 100, 100);
         receiveProgressEl.style.width = `${progress}%`;
-        
+
         // Check if file transfer is complete
         if (receivedSize >= receivedFileSize) {
           // Combine all chunks into a single blob
           const fileBlob = new Blob(receivedFileChunks, { type: receivedFileType });
           saveReceivedFile(fileBlob);
-          
+
           // Reset for next file
           receivedFileChunks = [];
-          
+
           log('File received successfully');
           setTimeout(() => {
             receiveProgressEl.style.width = '0%';
@@ -400,19 +428,19 @@
     // Save the received file
     function saveReceivedFile(blob) {
       const url = URL.createObjectURL(blob);
-      
+
       // Add file to the received files list
       if (receivedFilesEl.querySelector('p')) {
         receivedFilesEl.innerHTML = '';
       }
-      
+
       const fileItem = document.createElement('div');
       fileItem.className = 'file-item';
       fileItem.innerHTML = `
         <span>${receivedFileName} (${formatBytes(receivedFileSize)})</span>
         <a href="${url}" download="${receivedFileName}" target="_blank">Download</a>
       `;
-      
+
       receivedFilesEl.appendChild(fileItem);
     }
 
@@ -438,13 +466,13 @@
     // Format bytes to human-readable size
     function formatBytes(bytes, decimals = 2) {
       if (bytes === 0) return '0 Bytes';
-      
+
       const k = 1024;
       const dm = decimals < 0 ? 0 : decimals;
       const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-      
+
       const i = Math.floor(Math.log(bytes) / Math.log(k));
-      
+
       return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
     }
 

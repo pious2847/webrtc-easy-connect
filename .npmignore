@@ -1,0 +1,39 @@
+# Source files
+src/
+
+# Development files
+.github/
+.vscode/
+.idea/
+.git/
+.gitignore
+.eslintrc.js
+.eslintignore
+.prettierrc
+.prettierignore
+jest.config.js
+tsconfig.json
+webpack.config.js
+build.js
+
+# Examples (they're large and not needed in the package)
+examples/
+
+# Test files
+__tests__/
+*.test.ts
+*.spec.ts
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Dependencies
+node_modules/
+
+# Misc
+.DS_Store
+Thumbs.db

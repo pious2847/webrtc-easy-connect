@@ -136,7 +136,24 @@ export class AudioProcessor extends MediaProcessor {
   }
 
   private async createNoiseSuppressionEffect(params: Record<string, number>): Promise<AudioWorkletNode> {
-    await this.audioContext.audioWorklet.addModule('noise-suppression-processor.js');
+    try {
+      // Try to load from the worklets directory relative to the base URL
+      const baseUrl = window.location.origin;
+      const workletUrl = `${baseUrl}/node_modules/webrtc-easy/dist/worklets/noise-suppression-processor.js`;
+      await this.audioContext.audioWorklet.addModule(workletUrl);
+    } catch (error) {
+      console.warn('Failed to load noise suppression worklet from relative path:', error);
+
+      // Fallback to CDN or absolute path
+      try {
+        const cdnUrl = 'https://cdn.jsdelivr.net/npm/webrtc-easy@latest/dist/worklets/noise-suppression-processor.js';
+        await this.audioContext.audioWorklet.addModule(cdnUrl);
+      } catch (cdnError) {
+        console.error('Failed to load noise suppression worklet:', cdnError);
+        throw new Error('Could not load noise suppression worklet');
+      }
+    }
+
     return new AudioWorkletNode(this.audioContext, 'noise-suppression', {
       parameterData: params
     });
@@ -215,8 +232,23 @@ export class AudioProcessor extends MediaProcessor {
   }
 
   private async createPitchShiftEffect(params: Record<string, number>): Promise<AudioWorkletNode> {
-    // This is a simplified implementation that requires a pitch-shift-processor.js worklet
-    await this.audioContext.audioWorklet.addModule('pitch-shift-processor.js');
+    try {
+      // Try to load from the worklets directory relative to the base URL
+      const baseUrl = window.location.origin;
+      const workletUrl = `${baseUrl}/node_modules/webrtc-easy/dist/worklets/pitch-shift-processor.js`;
+      await this.audioContext.audioWorklet.addModule(workletUrl);
+    } catch (error) {
+      console.warn('Failed to load pitch shift worklet from relative path:', error);
+
+      // Fallback to CDN or absolute path
+      try {
+        const cdnUrl = 'https://cdn.jsdelivr.net/npm/webrtc-easy@latest/dist/worklets/pitch-shift-processor.js';
+        await this.audioContext.audioWorklet.addModule(cdnUrl);
+      } catch (cdnError) {
+        console.error('Failed to load pitch shift worklet:', cdnError);
+        throw new Error('Could not load pitch shift worklet');
+      }
+    }
 
     return new AudioWorkletNode(this.audioContext, 'pitch-shift', {
       parameterData: {

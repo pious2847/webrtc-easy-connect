@@ -8,6 +8,7 @@ A simple, flexible WebRTC library for multiple frontend frameworks.
 - 🎥 Media stream handling (camera, microphone, screen sharing)
 - 📊 Network quality monitoring and adaptation
 - 🔌 Data channel support
+- 🎨 Media processing (audio effects, video filters)
 - 🛠️ Framework integrations:
   - React
   - Vue
@@ -19,6 +20,57 @@ A simple, flexible WebRTC library for multiple frontend frameworks.
 ```bash
 npm install webrtc-easy
 ```
+
+## Building from Source
+
+To build the library from source:
+
+1. Clone the repository
+   ```bash
+   git clone https://github.com/yourusername/webrtc-easy.git
+   cd webrtc-easy
+   ```
+
+2. Install dependencies
+   ```bash
+   npm install
+   ```
+
+3. Build the library
+   ```bash
+   npm run build
+   ```
+
+This will create the following outputs:
+- TypeScript declarations in `dist/`
+- CommonJS modules in `dist/`
+- Browser bundle in `dist/webrtc-easy.min.js`
+
+## Running Examples
+
+The package includes several examples demonstrating different features:
+
+### Signaling Server
+
+Start the signaling server (required for most examples):
+
+```bash
+npm run start:signaling
+```
+
+This will start a WebSocket signaling server on port 3000.
+
+### File Sharing Example
+
+Open `examples/file-sharing/index.html` in your browser to try the file sharing example.
+
+### Audio Effects Example
+
+Open `examples/audio-effects/index.html` in your browser to try the audio effects example.
+
+### Screen Recording Example
+
+Open `examples/screen-recording/index.html` in your browser to try the screen recording example.
 
 ## Basic Usage
 
@@ -80,15 +132,15 @@ import { WebSocketSignaling } from 'webrtc-easy/core';
 const VideoChat = () => {
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
-  
-  const { 
-    localStream, 
-    remoteStream, 
+
+  const {
+    localStream,
+    remoteStream,
     connection,
     connectionState,
     error,
-    initConnection, 
-    startScreenShare 
+    initConnection,
+    startScreenShare
   } = useWebRTC({
     configuration: {
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
@@ -109,7 +161,7 @@ const VideoChat = () => {
 
   const handleStart = async () => {
     const conn = await initConnection();
-    
+
     const signaling = new WebSocketSignaling({
       url: 'wss://your-signaling-server.com',
       room: 'test-room'
@@ -138,12 +190,12 @@ const VideoChat = () => {
     <div>
       <button onClick={handleStart}>Start Call</button>
       <button onClick={startScreenShare}>Share Screen</button>
-      
+
       <div>
         <h3>Local Video</h3>
         <video ref={localVideoRef} autoPlay muted playsInline />
       </div>
-      
+
       <div>
         <h3>Remote Video</h3>
         <video ref={remoteVideoRef} autoPlay playsInline />
@@ -160,12 +212,12 @@ const VideoChat = () => {
   <div>
     <button @click="handleStart">Start Call</button>
     <button @click="startScreenShare">Share Screen</button>
-    
+
     <div>
       <h3>Local Video</h3>
       <video ref="localVideo" autoplay muted playsinline />
     </div>
-    
+
     <div>
       <h3>Remote Video</h3>
       <video ref="remoteVideo" autoplay playsinline />
@@ -209,7 +261,7 @@ watch(remoteStream, (stream) => {
 
 const handleStart = async () => {
   const conn = await initConnection();
-  
+
   const signaling = new WebSocketSignaling({
     url: 'wss://your-signaling-server.com',
     room: 'test-room'

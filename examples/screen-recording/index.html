@@ -114,25 +114,25 @@
 <body>
   <div class="container">
     <h1>WebRTC Screen Recording</h1>
-    
+
     <div class="status" id="status">
       Ready to record. Click "Start Recording" to begin.
     </div>
-    
+
     <div class="timer" id="timer">00:00:00</div>
-    
+
     <video class="preview" id="preview" autoplay muted playsinline></video>
-    
+
     <div class="controls">
       <button id="startBtn">Start Recording</button>
       <button id="pauseBtn" disabled>Pause</button>
       <button id="resumeBtn" disabled>Resume</button>
       <button id="stopBtn" disabled>Stop</button>
     </div>
-    
+
     <div class="settings">
       <h3>Recording Settings</h3>
-      
+
       <div class="setting-row">
         <label for="sourceSelect">Source:</label>
         <select id="sourceSelect">
@@ -142,7 +142,7 @@
           <option value="camera-screen">Camera + Screen</option>
         </select>
       </div>
-      
+
       <div class="setting-row">
         <label for="mimeTypeSelect">Format:</label>
         <select id="mimeTypeSelect">
@@ -150,30 +150,58 @@
           <option value="video/mp4">MP4</option>
         </select>
       </div>
-      
+
       <div class="setting-row">
         <label for="bitrateInput">Bitrate (kbps):</label>
         <input type="number" id="bitrateInput" min="500" max="8000" step="500" value="2500">
       </div>
-      
+
       <div class="setting-row">
         <label for="frameRateInput">Frame Rate:</label>
         <input type="number" id="frameRateInput" min="15" max="60" step="5" value="30">
       </div>
-      
+
       <div class="setting-row">
         <label for="filenameInput">Filename:</label>
         <input type="text" id="filenameInput" value="screen-recording">
       </div>
     </div>
-    
+
     <h2>Recordings</h2>
     <div class="recordings" id="recordings">
       <p>No recordings yet.</p>
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/webrtc-easy@latest/dist/webrtc-easy.min.js"></script>
+  <!-- Use local version of the library if available, fallback to CDN -->
+  <script>
+    // Try to load the local version first
+    function loadScript(src, fallbackSrc) {
+      return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = resolve;
+        script.onerror = () => {
+          console.warn(`Failed to load script from ${src}, trying fallback...`);
+          const fallbackScript = document.createElement('script');
+          fallbackScript.src = fallbackSrc;
+          fallbackScript.onload = resolve;
+          fallbackScript.onerror = reject;
+          document.head.appendChild(fallbackScript);
+        };
+        document.head.appendChild(script);
+      });
+    }
+
+    // Load the library
+    loadScript(
+      '../../dist/webrtc-easy.min.js',
+      'https://cdn.jsdelivr.net/npm/webrtc-easy@latest/dist/webrtc-easy.min.js'
+    ).catch(err => {
+      console.error('Failed to load WebRTC Easy library:', err);
+      alert('Failed to load WebRTC Easy library. Please check the console for details.');
+    });
+  </script>
   <script>
     // DOM elements
     const previewEl = document.getElementById('preview');
@@ -189,7 +217,7 @@
     const bitrateInput = document.getElementById('bitrateInput');
     const frameRateInput = document.getElementById('frameRateInput');
     const filenameInput = document.getElementById('filenameInput');
-    
+
     // Recording variables
     let mediaRecorder;
     let recordedChunks = [];
@@ -199,7 +227,7 @@
     let recordingTimer;
     let recordingPausedTime = 0;
     let recordingNumber = 1;
-    
+
     // Check supported MIME types
     function getSupportedMimeTypes() {
       const types = [
@@ -211,52 +239,52 @@
         'video/mp4;codecs=h264',
         'video/mp4;codecs=avc1'
       ];
-      
+
       return types.filter(type => MediaRecorder.isTypeSupported(type));
     }
-    
+
     // Initialize MIME type select
     function initMimeTypeSelect() {
       const supportedTypes = getSupportedMimeTypes();
       mimeTypeSelect.innerHTML = '';
-      
+
       supportedTypes.forEach(type => {
         const option = document.createElement('option');
         option.value = type;
         option.textContent = type.split(';')[0] + (type.includes('codecs=') ? ` (${type.split('codecs=')[1]})` : '');
         mimeTypeSelect.appendChild(option);
       });
-      
+
       if (supportedTypes.length === 0) {
         mimeTypeSelect.innerHTML = '<option value="">No supported formats</option>';
         startBtn.disabled = true;
         statusEl.textContent = 'Error: Your browser does not support recording.';
       }
     }
-    
+
     // Format time (HH:MM:SS)
     function formatTime(ms) {
       const totalSeconds = Math.floor(ms / 1000);
       const hours = Math.floor(totalSeconds / 3600);
       const minutes = Math.floor((totalSeconds % 3600) / 60);
       const seconds = totalSeconds % 60;
-      
+
       return [
         hours.toString().padStart(2, '0'),
         minutes.toString().padStart(2, '0'),
         seconds.toString().padStart(2, '0')
       ].join(':');
     }
-    
+
     // Update recording timer
     function updateTimer() {
       if (!recordingStartTime) return;
-      
+
       const currentTime = Date.now();
       const elapsedTime = currentTime - recordingStartTime - recordingPausedTime;
       timerEl.textContent = formatTime(elapsedTime);
     }
-    
+
     // Start recording timer
     function startTimer() {
       recordingStartTime = Date.now();
@@ -264,25 +292,25 @@
       recordingTimer = setInterval(updateTimer, 1000);
       updateTimer();
     }
-    
+
     // Pause recording timer
     function pauseTimer() {
       clearInterval(recordingTimer);
       recordingPausedTime = Date.now() - recordingStartTime;
     }
-    
+
     // Resume recording timer
     function resumeTimer() {
       recordingStartTime = Date.now() - recordingPausedTime;
       recordingTimer = setInterval(updateTimer, 1000);
     }
-    
+
     // Stop recording timer
     function stopTimer() {
       clearInterval(recordingTimer);
       timerEl.textContent = '00:00:00';
     }
-    
+
     // Get screen stream based on selected source
     async function getScreenStream() {
       const source = sourceSelect.value;
@@ -293,21 +321,21 @@
           height: { ideal: 1080 }
         }
       };
-      
+
       if (source === 'screen-audio') {
         displayMediaOptions.audio = true;
       }
-      
+
       try {
         stream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
-        
+
         if (source === 'camera-screen') {
           try {
-            cameraStream = await navigator.mediaDevices.getUserMedia({ 
-              video: true, 
-              audio: true 
+            cameraStream = await navigator.mediaDevices.getUserMedia({
+              video: true,
+              audio: true
             });
-            
+
             // Combine screen and camera streams
             const tracks = [...stream.getTracks(), ...cameraStream.getTracks()];
             stream = new MediaStream(tracks);
@@ -316,7 +344,7 @@
             statusEl.textContent = `Warning: Could not access camera. Recording screen only.`;
           }
         }
-        
+
         previewEl.srcObject = stream;
         return true;
       } catch (error) {
@@ -325,19 +353,19 @@
         return false;
       }
     }
-    
+
     // Start recording
     async function startRecording() {
       recordedChunks = [];
-      
+
       const success = await getScreenStream();
       if (!success) return;
-      
+
       const options = {
         mimeType: mimeTypeSelect.value,
         videoBitsPerSecond: parseInt(bitrateInput.value) * 1000
       };
-      
+
       try {
         mediaRecorder = new MediaRecorder(stream, options);
       } catch (error) {
@@ -346,17 +374,17 @@
         stopStream();
         return;
       }
-      
+
       mediaRecorder.ondataavailable = handleDataAvailable;
       mediaRecorder.onstop = handleStop;
       mediaRecorder.onpause = handlePause;
       mediaRecorder.onresume = handleResume;
       mediaRecorder.onerror = handleError;
-      
+
       // Start recording with 1 second chunks
       mediaRecorder.start(1000);
       startTimer();
-      
+
       // Update UI
       startBtn.disabled = true;
       pauseBtn.disabled = false;
@@ -365,25 +393,25 @@
       mimeTypeSelect.disabled = true;
       bitrateInput.disabled = true;
       frameRateInput.disabled = true;
-      
+
       statusEl.textContent = 'Recording...';
       startBtn.classList.add('recording');
     }
-    
+
     // Pause recording
     function pauseRecording() {
       if (mediaRecorder && mediaRecorder.state === 'recording') {
         mediaRecorder.pause();
       }
     }
-    
+
     // Resume recording
     function resumeRecording() {
       if (mediaRecorder && mediaRecorder.state === 'paused') {
         mediaRecorder.resume();
       }
     }
-    
+
     // Stop recording
     function stopRecording() {
       if (mediaRecorder && (mediaRecorder.state === 'recording' || mediaRecorder.state === 'paused')) {
@@ -391,40 +419,40 @@
         stopStream();
       }
     }
-    
+
     // Stop all streams
     function stopStream() {
       if (stream) {
         stream.getTracks().forEach(track => track.stop());
       }
-      
+
       if (cameraStream) {
         cameraStream.getTracks().forEach(track => track.stop());
       }
-      
+
       previewEl.srcObject = null;
     }
-    
+
     // Handle data available event
     function handleDataAvailable(event) {
       if (event.data && event.data.size > 0) {
         recordedChunks.push(event.data);
       }
     }
-    
+
     // Handle recording stopped
     function handleStop() {
       stopTimer();
-      
+
       // Create recording blob
       const mimeType = mimeTypeSelect.value.split(';')[0];
       const blob = new Blob(recordedChunks, { type: mimeType });
       const url = URL.createObjectURL(blob);
       const filename = `${filenameInput.value || 'recording'}-${recordingNumber}.${mimeType === 'video/webm' ? 'webm' : 'mp4'}`;
-      
+
       // Add recording to list
       addRecordingToList(url, filename, blob.size, mimeType);
-      
+
       // Reset UI
       startBtn.disabled = false;
       pauseBtn.disabled = true;
@@ -434,60 +462,60 @@
       mimeTypeSelect.disabled = false;
       bitrateInput.disabled = false;
       frameRateInput.disabled = false;
-      
+
       startBtn.classList.remove('recording');
       pauseBtn.classList.remove('paused');
-      
+
       statusEl.textContent = 'Recording saved. Ready to record again.';
       recordingNumber++;
     }
-    
+
     // Handle recording paused
     function handlePause() {
       pauseTimer();
-      
+
       pauseBtn.disabled = true;
       resumeBtn.disabled = false;
-      
+
       startBtn.classList.remove('recording');
       pauseBtn.classList.add('paused');
-      
+
       statusEl.textContent = 'Recording paused.';
     }
-    
+
     // Handle recording resumed
     function handleResume() {
       resumeTimer();
-      
+
       pauseBtn.disabled = false;
       resumeBtn.disabled = true;
-      
+
       startBtn.classList.add('recording');
       pauseBtn.classList.remove('paused');
-      
+
       statusEl.textContent = 'Recording resumed...';
     }
-    
+
     // Handle recording error
     function handleError(event) {
       console.error('Recording error:', event.error);
       statusEl.textContent = `Error: ${event.error}`;
       stopRecording();
     }
-    
+
     // Add recording to the list
     function addRecordingToList(url, filename, size, type) {
       // Remove "No recordings yet" message if present
       if (recordingsEl.querySelector('p')) {
         recordingsEl.innerHTML = '';
       }
-      
+
       const item = document.createElement('div');
       item.className = 'recording-item';
-      
+
       const formattedSize = formatFileSize(size);
       const date = new Date().toLocaleString();
-      
+
       item.innerHTML = `
         <div class="recording-info">
           <strong>${filename}</strong>
@@ -501,42 +529,42 @@
           <button class="delete-btn">Delete</button>
         </div>
       `;
-      
+
       // Add event listeners
       item.querySelector('.play-btn').addEventListener('click', () => {
         previewEl.src = url;
         previewEl.play();
       });
-      
+
       item.querySelector('.delete-btn').addEventListener('click', () => {
         URL.revokeObjectURL(url);
         item.remove();
-        
+
         if (recordingsEl.children.length === 0) {
           recordingsEl.innerHTML = '<p>No recordings yet.</p>';
         }
       });
-      
+
       recordingsEl.appendChild(item);
     }
-    
+
     // Format file size
     function formatFileSize(bytes) {
       if (bytes === 0) return '0 Bytes';
-      
+
       const k = 1024;
       const sizes = ['Bytes', 'KB', 'MB', 'GB'];
       const i = Math.floor(Math.log(bytes) / Math.log(k));
-      
+
       return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
-    
+
     // Event listeners
     startBtn.addEventListener('click', startRecording);
     pauseBtn.addEventListener('click', pauseRecording);
     resumeBtn.addEventListener('click', resumeRecording);
     stopBtn.addEventListener('click', stopRecording);
-    
+
     // Initialize
     initMimeTypeSelect();
   </script>

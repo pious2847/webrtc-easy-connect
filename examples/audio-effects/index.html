@@ -78,12 +78,12 @@
 <body>
   <div class="container">
     <h1>WebRTC Audio Effects Example</h1>
-    
+
     <div class="controls">
       <button id="startBtn">Start Camera</button>
       <button id="stopBtn" disabled>Stop Camera</button>
     </div>
-    
+
     <div class="video-container">
       <div>
         <h3>Original</h3>
@@ -94,7 +94,7 @@
         <video id="processedVideo" autoplay playsinline></video>
       </div>
     </div>
-    
+
     <h2>Audio Effects</h2>
     <div class="controls">
       <button class="effect-btn" data-effect="gain">Gain</button>
@@ -106,7 +106,7 @@
       <button class="effect-btn" data-effect="equalizer">Equalizer</button>
       <button class="effect-btn" data-effect="panner">Panner</button>
     </div>
-    
+
     <div class="effect-controls" id="gainControls" style="display: none;">
       <h3>Gain Controls</h3>
       <div class="slider-container">
@@ -115,7 +115,7 @@
         <span id="gainValueDisplay">1.0</span>
       </div>
     </div>
-    
+
     <div class="effect-controls" id="filterControls" style="display: none;">
       <h3>Filter Controls</h3>
       <div class="slider-container">
@@ -129,7 +129,7 @@
         <span id="filterQDisplay">1.0</span>
       </div>
     </div>
-    
+
     <div class="effect-controls" id="compressorControls" style="display: none;">
       <h3>Compressor Controls</h3>
       <div class="slider-container">
@@ -143,7 +143,7 @@
         <span id="compressorRatioDisplay">12.0</span>
       </div>
     </div>
-    
+
     <div class="effect-controls" id="reverbControls" style="display: none;">
       <h3>Reverb Controls</h3>
       <div class="slider-container">
@@ -157,7 +157,7 @@
         <span id="reverbDecayDisplay">0.5</span>
       </div>
     </div>
-    
+
     <div class="effect-controls" id="delayControls" style="display: none;">
       <h3>Delay Controls</h3>
       <div class="slider-container">
@@ -171,7 +171,7 @@
         <span id="delayFeedbackDisplay">0.5</span>
       </div>
     </div>
-    
+
     <div class="effect-controls" id="distortionControls" style="display: none;">
       <h3>Distortion Controls</h3>
       <div class="slider-container">
@@ -180,7 +180,7 @@
         <span id="distortionAmountDisplay">50</span>
       </div>
     </div>
-    
+
     <div class="effect-controls" id="equalizerControls" style="display: none;">
       <h3>Equalizer Controls</h3>
       <div class="slider-container">
@@ -199,7 +199,7 @@
         <span id="eqHighGainDisplay">0</span>
       </div>
     </div>
-    
+
     <div class="effect-controls" id="pannerControls" style="display: none;">
       <h3>Panner Controls</h3>
       <div class="slider-container">
@@ -210,7 +210,35 @@
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/webrtc-easy@latest/dist/webrtc-easy.min.js"></script>
+  <!-- Use local version of the library if available, fallback to CDN -->
+  <script>
+    // Try to load the local version first
+    function loadScript(src, fallbackSrc) {
+      return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = resolve;
+        script.onerror = () => {
+          console.warn(`Failed to load script from ${src}, trying fallback...`);
+          const fallbackScript = document.createElement('script');
+          fallbackScript.src = fallbackSrc;
+          fallbackScript.onload = resolve;
+          fallbackScript.onerror = reject;
+          document.head.appendChild(fallbackScript);
+        };
+        document.head.appendChild(script);
+      });
+    }
+
+    // Load the library
+    loadScript(
+      '../../dist/webrtc-easy.min.js',
+      'https://cdn.jsdelivr.net/npm/webrtc-easy@latest/dist/webrtc-easy.min.js'
+    ).catch(err => {
+      console.error('Failed to load WebRTC Easy library:', err);
+      alert('Failed to load WebRTC Easy library. Please check the console for details.');
+    });
+  </script>
   <script>
     // DOM elements
     const startBtn = document.getElementById('startBtn');
@@ -219,14 +247,14 @@
     const processedVideo = document.getElementById('processedVideo');
     const effectButtons = document.querySelectorAll('.effect-btn');
     const effectControls = document.querySelectorAll('.effect-controls');
-    
+
     // WebRTC variables
     let connection;
     let localStream;
     let processedStream;
     let audioProcessor;
     let currentEffect = null;
-    
+
     // Start camera
     async function startCamera() {
       try {
@@ -235,71 +263,77 @@
           video: true,
           audio: true
         });
-        
+
         // Display original video
         originalVideo.srcObject = localStream;
-        
-        // Create audio processor
-        audioProcessor = new WebRTCEasy.AudioProcessor();
-        await audioProcessor.start();
-        
-        // Process the stream
-        processedStream = await audioProcessor.process(localStream);
-        
+
+        try {
+          // Create audio processor
+          audioProcessor = new WebRTCEasy.AudioProcessor();
+          await audioProcessor.start();
+
+          // Process the stream
+          processedStream = await audioProcessor.process(localStream);
+        } catch (processorError) {
+          console.error('Error creating audio processor:', processorError);
+          alert('Audio processor not available. Using original stream for both videos.');
+          processedStream = localStream;
+        }
+
         // Display processed video
         processedVideo.srcObject = processedStream;
-        
+
         // Update buttons
         startBtn.disabled = true;
         stopBtn.disabled = false;
-        
+
         console.log('Camera started');
       } catch (error) {
         console.error('Error starting camera:', error);
         alert(`Error starting camera: ${error.message}`);
       }
     }
-    
+
     // Stop camera
     function stopCamera() {
       if (localStream) {
         localStream.getTracks().forEach(track => track.stop());
         localStream = null;
       }
-      
+
       if (processedStream) {
         processedStream.getTracks().forEach(track => track.stop());
         processedStream = null;
       }
-      
+
       if (audioProcessor) {
         audioProcessor.stop();
         audioProcessor = null;
       }
-      
+
       originalVideo.srcObject = null;
       processedVideo.srcObject = null;
-      
+
       startBtn.disabled = false;
       stopBtn.disabled = true;
-      
+
       console.log('Camera stopped');
     }
-    
+
     // Show effect controls
     function showEffectControls(effectType) {
       // Hide all controls
       effectControls.forEach(control => {
         control.style.display = 'none';
       });
-      
+
       // Show selected control
       const controlId = `${effectType}Controls`;
       const control = document.getElementById(controlId);
       if (control) {
         control.style.display = 'flex';
       }
-      
+
       // Update active button
       effectButtons.forEach(button => {
         if (button.dataset.effect === effectType) {
@@ -308,36 +342,36 @@
           button.classList.remove('active');
         }
       });
-      
+
       currentEffect = effectType;
       applyEffect();
     }
-    
+
     // Apply the current effect
     async function applyEffect() {
       if (!audioProcessor || !currentEffect) return;
-      
+
       try {
         // Remove any existing effects
         // In a real implementation, you would keep track of effect IDs
         // and only update the current effect
-        
+
         let params = {};
-        
+
         switch (currentEffect) {
           case 'gain':
             params = {
               gain: parseFloat(document.getElementById('gainValue').value)
             };
             break;
-            
+
           case 'filter':
             params = {
               frequency: parseFloat(document.getElementById('filterFrequency').value),
               Q: parseFloat(document.getElementById('filterQ').value)
             };
             break;
-            
+
           case 'compressor':
             params = {
               threshold: parseFloat(document.getElementById('compressorThreshold').value),
@@ -347,27 +381,27 @@
               knee: 30
             };
             break;
-            
+
           case 'reverb':
             params = {
               duration: parseFloat(document.getElementById('reverbDuration').value),
               decay: parseFloat(document.getElementById('reverbDecay').value)
             };
             break;
-            
+
           case 'delay':
             params = {
               time: parseFloat(document.getElementById('delayTime').value),
               feedback: parseFloat(document.getElementById('delayFeedback').value)
             };
             break;
-            
+
           case 'distortion':
             params = {
               amount: parseFloat(document.getElementById('distortionAmount').value)
             };
             break;
-            
+
           case 'equalizer':
             params = {
               lowGain: parseFloat(document.getElementById('eqLowGain').value),
@@ -379,58 +413,58 @@
               midQ: 1
             };
             break;
-            
+
           case 'panner':
             params = {
               pan: parseFloat(document.getElementById('pannerValue').value)
             };
             break;
         }
-        
+
         // Add the effect
         await audioProcessor.addEffect(currentEffect, {
           type: currentEffect,
           params: params
         });
-        
+
         console.log(`Applied ${currentEffect} effect with params:`, params);
       } catch (error) {
         console.error(`Error applying ${currentEffect} effect:`, error);
       }
     }
-    
+
     // Update display values for sliders
     function updateDisplayValue(inputId, displayId) {
       const input = document.getElementById(inputId);
       const display = document.getElementById(displayId);
-      
+
       if (input && display) {
         display.textContent = input.value;
       }
     }
-    
+
     // Event listeners
     startBtn.addEventListener('click', startCamera);
     stopBtn.addEventListener('click', stopCamera);
-    
+
     // Effect button listeners
     effectButtons.forEach(button => {
       button.addEventListener('click', () => {
         showEffectControls(button.dataset.effect);
       });
     });
-    
+
     // Slider listeners
     document.querySelectorAll('input[type="range"]').forEach(slider => {
       const inputId = slider.id;
       const displayId = `${inputId}Display`;
-      
+
       slider.addEventListener('input', () => {
         updateDisplayValue(inputId, displayId);
         applyEffect();
       });
     });
-    
+
     // Initialize
     console.log('WebRTC Audio Effects Example');
   </script>
