@@ -1,6 +1,9 @@
-# WebRTC Easy
+# WebRTC Easy Connect
 
 A simple, flexible WebRTC library for multiple frontend frameworks.
+
+[![npm version](https://img.shields.io/npm/v/webrtc-easy-connect.svg)](https://www.npmjs.com/package/webrtc-easy-connect)
+[![license](https://img.shields.io/npm/l/webrtc-easy-connect.svg)](https://github.com/pious2847/webrtc-easy-connect/blob/main/LICENSE)
 
 ## Features
 
@@ -18,8 +21,12 @@ A simple, flexible WebRTC library for multiple frontend frameworks.
 ## Installation
 
 ```bash
-npm install webrtc-easy
+npm install webrtc-easy-connect
 ```
+
+## Documentation
+
+For detailed API documentation, see [API Reference](docs/api.md).
 
 ## Building from Source
 
@@ -27,7 +34,7 @@ To build the library from source:
 
 1. Clone the repository
    ```bash
-   git clone https://github.com/yourusername/webrtc-easy.git
+   git clone https://github.com/pious2847/WEB-RTC.git
    cd webrtc-easy
    ```
 
