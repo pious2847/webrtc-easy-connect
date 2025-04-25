@@ -1,3 +1,6 @@
+import { AudioEffect, AudioProcessor } from "./audio-processor";
+import { VideoFilter, VideoProcessor } from "./video-processor";
+
 export class MediaHelper {
   private audioProcessor: AudioProcessor;
   private videoProcessor: VideoProcessor;
